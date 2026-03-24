@@ -182,5 +182,5 @@ app.post('/api/obfuscate', async (req, res) => {
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 7860;
 app.listen(PORT, () => console.log(`🔐 MR FRANK Obfuscator v2 running on :${PORT}`));
