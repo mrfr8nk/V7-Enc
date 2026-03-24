@@ -4,6 +4,7 @@ const fsp = require('fs').promises;
 const path = require('path');
 const { execSync } = require('child_process');
 const JavaScriptObfuscator = require('javascript-obfuscator');
+const babel = require('@babel/core');
 const os = require('os');
 
 const app = express();
@@ -38,19 +39,30 @@ function obfuscate(code) {
 }
 
 function stripTS(filePath) {
+  const src = fs.readFileSync(filePath, 'utf8');
   try {
-    execSync(
-      `npx tsc "${filePath}" --outDir "${path.dirname(filePath)}" --target ES2020 --module commonjs --esModuleInterop --skipLibCheck --allowJs 2>/dev/null`,
-      { timeout: 20000 }
-    );
-    const jsPath = filePath.replace(/\.ts$/, '.js');
-    return fs.existsSync(jsPath) ? fs.readFileSync(jsPath, 'utf8') : null;
-  } catch {
-    let code = fs.readFileSync(filePath, 'utf8');
-    code = code.replace(/:\s*(string|number|boolean|any|void|never|unknown|object|null|undefined)(\[\])?(\s*[,)=;{<\n])/g, '$3');
-    code = code.replace(/interface\s+\w+\s*\{[^}]*\}/gs, '');
-    code = code.replace(/^export\s+type\s+.+;$/gm, '');
-    return code;
+    // Babel strips ALL TypeScript syntax: import type, generics, decorators, type aliases, interfaces etc.
+    const result = babel.transformSync(src, {
+      filename: filePath,
+      presets: [
+        ['@babel/preset-typescript', {
+          allExtensions: true,
+          allowDeclareFields: true,
+          isTSX: filePath.endsWith('.tsx')
+        }]
+      ],
+      plugins: [
+        ['@babel/plugin-transform-modules-commonjs', { strictMode: false }],
+        ['@babel/plugin-proposal-decorators', { legacy: true }],
+        '@babel/plugin-proposal-class-properties'
+      ],
+      sourceMaps: false,
+      retainLines: false,
+      compact: false
+    });
+    return result?.code || null;
+  } catch (err) {
+    throw new Error(`Babel strip failed: ${err.message.split('\n')[0]}`);
   }
 }
 
@@ -111,7 +123,7 @@ app.post('/api/obfuscate', async (req, res) => {
 
   const log = (type, msg) => sse(res, 'log', { type, msg });
   const tmpDir = path.join(os.tmpdir(), `subzero_${Date.now()}`);
-  const banner = (customBanner?.trim() || '// Powered by MR FRANK | SubZero MD V7 |') + '\n';
+  const banner = (customBanner?.trim() || '// Powered by MR FRANK | SubZero MD V7 | @GlobalTechInfo') + '\n';
 
   function authUrl(url) {
     try {
@@ -182,5 +194,5 @@ app.post('/api/obfuscate', async (req, res) => {
 
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
-const PORT = process.env.PORT || 7860;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🔐 MR FRANK Obfuscator v2 running on :${PORT}`));
